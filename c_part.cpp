@@ -153,9 +153,12 @@ int main(int argc, char *argv[]){
 	computeI(G,I_new,I_old,convergence,size);
 	ofstream outfile ("aaa-cpp.txt");
 	if (outfile.is_open()){
+        float sum_I = 0;
 		for(int i(0);i<size;i++){
 			outfile << i << " = " << I_new[i]<<endl;
+            sum_I += I_new[i];
 		}
+        outfile << "sum = "<< sum_I<<endl;
 		outfile.close();
   	}
  	else
