@@ -92,8 +92,6 @@ void computeI(float**G, float*I_new, float* I_old, float convergence,int n){
 	while (diff >convergence){
 		assignArray(I_new,I_old,n);
 		multiplyMatrix(G,I_new,n);
-		diff = difference(I_new,I_old,n);
-        cout<<diff<<endl;
 
 	    float sum = 0.0;
 	    for (int i(0);i<n;i++){
@@ -102,6 +100,8 @@ void computeI(float**G, float*I_new, float* I_old, float convergence,int n){
 	    for (int i(0);i<n;i++){
 	        I_new[i]=I_new[i]/sum;
 	    }
+		diff = difference(I_new,I_old,n);
+        cout<<diff<<endl;
 	}
 }
 
