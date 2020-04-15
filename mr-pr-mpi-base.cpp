@@ -9,6 +9,7 @@
 #include "sys/stat.h"
 #include "mapreduce.h"
 #include "keyvalue.h"
+#include <chrono>
 #include <cmath>
 #include <algorithm>
 using namespace MAPREDUCE_NS;
@@ -52,6 +53,7 @@ void addDanglingNode(uint64_t, char*, int, char*, int, KeyValue*, void*);
 
 int main(int narg, char** args){
     std::string file = args[1];
+    auto start = std::chrono::high_resolution_clock::now();
     std::vector<std::string > v = split(file,'.');
     std::string filename = v[0];
     MPI_Init(&narg,&args);
@@ -153,6 +155,9 @@ int main(int narg, char** args){
         collectiveDanglingImportance= 0.0;
     }
     MPI_Finalize();
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double,std::milli> duration = (stop - start);
+    std::cout << duration.count()/1000.0<<" seconds taken." << '\n';
 }
 
 

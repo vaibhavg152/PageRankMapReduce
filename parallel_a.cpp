@@ -7,6 +7,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/config.hpp>
 #include <cmath>
+#include <chrono>
 #include <algorithm>
 
 std::vector<std::vector<int> > graph;
@@ -152,15 +153,20 @@ int main(int argc, char *argv[]){
     std::string line;
 	std::string file = argv[1];
     int numProc      = atoi(argv[2]);
+
+    auto start = std::chrono::high_resolution_clock::now();
     std::ifstream infile(file);
     int maxx(0);
 	if(infile.is_open()){
 		while(getline(infile,line)){
 			std::vector<std::string> splittedString = split(line,' ');
 			int k = std::max(std::stoi(splittedString[1]) , std::stoi(splittedString[0]));
-            if(k>maxx)
+
+            if(k>maxx){
                 maxx = k;
+            }
 		}
+
         infile.close();
 	}
     int size = maxx + 1;
@@ -187,20 +193,32 @@ int main(int argc, char *argv[]){
     std::vector<float> prev_vals(size,0.0);
     float diff = 1.0;
     DanglingImportance = ((float)dangling)/((float)size);
+    numProc  = std::min(numProc,size);
     spec.reduce_tasks = numProc;
-    pagerank::job::datasource_type datasource(0, size, size/numProc);
-    pagerank::job job(datasource, spec);
     mapreduce::results result;
     while(diff>Convergence){
         for(int i(0);i<importances.size();i++){
             prev_vals.at(i)=importances[i];
         }
+        pagerank::job::datasource_type datasource(0, size, size/numProc);
+        pagerank::job job(datasource, spec);
         job.run<mapreduce::schedule_policy::cpu_parallel<pagerank::job> >(result);
         normalize();
         diff = calculateDifference(prev_vals);
     }
+    std::string outfile_name = file.substr(0,file.length()-4);
+    outfile_name.append("-pr-cpp.txt");
+    std::ofstream outputFile(outfile_name);
+    double sum = 0.0;
     for(int i(0);i<importances.size();i++){
-        std::cout<<i<<" = "<<importances[i]<<std::endl;
+        outputFile << i <<" = "<<importances[i]<<std::endl;
+        sum+=importances[i];
+    //     std::cout<<i<<" = "<<importances[i]<<std::endl;
     }
+    outputFile<<"sum = "<<sum<<std::endl;
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double,std::milli> duration = (stop - start);
+    std::cout << duration.count()/1000.0<<" seconds taken." << '\n';
+
 	return 0;
 }
