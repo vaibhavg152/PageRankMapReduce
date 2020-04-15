@@ -46,4 +46,4 @@ for filename in filenames:
 	output = stream.read().split()
 	timings['pr-mpi-base'][filename.strip()] = (float(output[0]))
 
-#json.dump(timings,open('timings.json','w+'))
+json.dump(timings,open('timings.json','w+'))
