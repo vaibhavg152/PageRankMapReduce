@@ -10,39 +10,44 @@ timings = {'pr-cpp': {},\
 
 filenames = open('test/all-tests.txt').readlines()[1:-1]
 
-print('running part a')
-compile_command = 'g++ parallel_a.cpp /usr/lib/x86_64-linux-gnu/libboost_system.a /usr/lib/x86_64-linux-gnu/libboost_iostreams.a /usr/lib/x86_64-linux-gnu/libboost_filesystem.a -pthread -o mr-pr-cpp.o'
-
-os.system(compile_command)
-for filename in filenames:
-	filename = 'test/' + filename.strip()
-	print(filename)
-	run_command = './mr-pr-cpp.o {}.txt {} -o {}-pr-cpp.txt'.format(filename,num_processors,filename)
-	stream = os.popen(run_command)
-	output = stream.read().split()
-	timings['pr-cpp'][filename.strip()] = (float(output[0]))
-
-
-print('running part b')
-compile_command = ''
-
-os.system(compile_command)
-for filename in filenames:
-	filename = 'test/' + filename.strip()
-	run_command = ''
-	stream = os.popen(run_command)
-	output = stream.read().split()
-	timings['pr-mpi'][filename.strip()] = (float(output[0]))
+# print('running part a')
+# compile_command = 'g++ parallel_a.cpp /usr/lib/x86_64-linux-gnu/libboost_system.a /usr/lib/x86_64-linux-gnu/libboost_iostreams.a /usr/lib/x86_64-linux-gnu/libboost_filesystem.a -pthread -o mr-pr-cpp.o'
+#
+# os.system(compile_command)
+# for filename in filenames:
+# 	filename = 'test/' + filename.strip()
+# 	print(filename)
+# 	run_command = './mr-pr-cpp.o {}.txt {} -o {}-pr-cpp.txt'.format(filename,num_processors,filename)
+# 	stream = os.popen(run_command)
+# 	output = stream.read().split()
+# 	timings['pr-cpp'][filename.strip()] = (float(output[0]))
+#
+#
+# print('running part b')
+# compile_command = ''
+#
+# os.system(compile_command)
+# for filename in filenames:
+# 	filename = 'test/' + filename.strip()
+# 	run_command = ''
+# 	stream = os.popen(run_command)
+# 	output = stream.read().split()
+# 	timings['pr-mpi'][filename.strip()] = (float(output[0]))
 
 
 print('running part c')
-compile_command = ''
+compile_command = 'mpic++ -c mr-pr-mpi-base.cpp -o mr-pr-mpi-base.o -I src\nmpic++ -g -O mr-pr-mpi-base.o src/libmrmpi_mpicc.a -o mr-pr-mpi-base'
 
 os.system(compile_command)
-for filename in filenames:
+for filename in reversed(filenames):
+	# if 'uniquely3colo' in filename:
+	# 	print('skipping',filename)
+	# 	continue
+	print(filename)
 	filename = 'test/' + filename.strip()
-	run_command = ''
+	run_command = 'mpirun -np {} mr-pr-mpi-base {}.txt'.format(num_processors,filename)
 	stream = os.popen(run_command)
+	# print(stream)
 	output = stream.read().split()
 	timings['pr-mpi-base'][filename.strip()] = (float(output[0]))
 
