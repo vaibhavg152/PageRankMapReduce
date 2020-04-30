@@ -16,7 +16,7 @@ int totalExistingNodes;
 float TotalImportance;
 float DanglingImportance;
 float Alpha = 0.85;
-float Convergence = 0.001;
+float Convergence = 0.0005;
 
 std::vector<std::string> split(std::string strToSplit, char delimeter){
     std::stringstream ss(strToSplit);
@@ -92,6 +92,7 @@ void function_for_reduce(int &key, std::vector<float> imp){
 class MyMapReduce{
 public:
     MyMapReduce(MPI_Comm comm, int size){
+        root = 0;
         communicator = comm;
         map_size = size;
         MPI_Comm_rank(communicator, &my_rank);
@@ -107,35 +108,84 @@ public:
     }
 
     void COLLATE(){
-        // print_keyvalue();
-        for(int i=0; i<kv.size(); i++){
-            std::pair <int, float> cur_pair = kv[i];
-            int key = kv[i].first;
-            std::map<int,std::vector<float> >::const_iterator it = keymultivalues.find(key);
-            if(it==keymultivalues.end()){
-                std::vector<float> v = {cur_pair.second};
-                // v.push_back(cur_pair.second);
-                keymultivalues.insert({key,v});
+        // send all keyvalues
+        if(my_rank!=root){
+            int kv_size = kv.size();
+            MPI_Send(&kv_size, 1, MPI_INT, root, 0, MPI_COMM_WORLD);
+            int keys[kv_size];
+            float values[kv_size];
+            for(int i=0; i<kv.size(); i++){
+                keys[i] = kv[i].first;
+                values[i] = kv[i].second;
             }
-            else{
-                std::vector<float> v = it->second;
-                v.push_back(cur_pair.second);
-                keymultivalues[key] = v;
+            MPI_Send(&keys, kv_size, MPI_INT, root, 0, MPI_COMM_WORLD);
+            MPI_Send(&values, kv_size, MPI_FLOAT, root, 0, MPI_COMM_WORLD);
+        }
+        else{
+            // receiving key values from all other processors
+            for(int sender=1; sender<num_procs; sender++){
+                int kv_size;
+                // std::cout << "receiving kvsize from sender:"<<sender << '\n';
+                MPI_Recv(&kv_size, 1, MPI_INT, sender, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                // std::cout << "received kvsize:"<<kv_size<<" from sender:"<<sender << '\n';
+                int keys[kv_size];
+                float values[kv_size];
+                MPI_Recv(keys, kv_size, MPI_INT, sender, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(values, kv_size, MPI_FLOAT, sender, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                // collating the key values received by the processor
+                for(int i=0; i<kv_size; i++){
+                    auto it = keymultivalues.find(keys[i]);
+                    if(it==keymultivalues.end()){
+                        std::vector<float> v = {values[i]};
+                        keymultivalues.insert({keys[i],v});
+                    }
+                    else{
+                        std::vector<float> v = it->second;
+                        v.push_back(values[i]);
+                        keymultivalues[keys[i]] = v;
+                    }
+                }
+            }
+            // collating the key values of the root processors
+            for(int i=0; i<kv.size(); i++){
+                std::pair <int, float> cur_pair = kv[i];
+                int key = kv[i].first;
+                std::map<int,std::vector<float> >::const_iterator it = keymultivalues.find(key);
+                if(it==keymultivalues.end()){
+                    std::vector<float> v = {cur_pair.second};
+                    keymultivalues.insert({key,v});
+                }
+                else{
+                    std::vector<float> v = it->second;
+                    v.push_back(cur_pair.second);
+                    keymultivalues[key] = v;
+                }
             }
         }
         // print_keymultivalue();
     }
 
     void REDUCE(void (*func)(int&,std::vector<float>)){
-        for(int j=my_rank*size_per_process; j<std::min((my_rank+1)*size_per_process, map_size); j++){
-            auto it = keymultivalues.find(j);
-            if(it==keymultivalues.end()){
-                if(node_exists[j])
-                    std::cout << "something is wrong" << '\n';
-                else continue;
+        float imp_a[importances.size()];
+        if(my_rank==root){
+            for(int j=0; j<map_size; j++){
+            // for(int j=my_rank*size_per_process; j<std::min((my_rank+1)*size_per_process, map_size); j++){
+                auto it = keymultivalues.find(j);
+                if(it==keymultivalues.end()){
+                    if(node_exists[j])
+                        std::cout << "something is wrong" << '\n';
+                    else continue;
+                }
+                func(j,it->second);
             }
-            func(j,it->second);
+            for(int i=0; i<importances.size();i++){
+                imp_a[i] = importances[i];
+            }
         }
+        MPI_Bcast(&imp_a,importances.size(),MPI_FLOAT,root,MPI_COMM_WORLD);
+        for(int i=0; i<importances.size(); i++)
+            importances[i] = imp_a[i];
+
     }
 
     void print_keymultivalue(){
@@ -161,7 +211,7 @@ private:
     MPI_Comm communicator;
     keyvalue_t kv;
     keymultivalue_t keymultivalues;
-    int map_size, num_procs, my_rank, size_per_process;
+    int map_size, num_procs, my_rank, size_per_process, root;
 };
 
 // void MAP(void (*func)(keyvalue_t&,int), int size, int num){
@@ -257,50 +307,57 @@ int main(int narg, char** argv){
     float diff = 1.0;
     DanglingImportance = ((float)dangling)/((float)size);
 
+    int iter=0, root=0;
+
     MPI_Init(&narg, &argv);
-    int numProc = 0;
+    int numProc = 0, my_rank;
     MPI_Comm_size(MPI_COMM_WORLD,&numProc);
+    MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);
 
-    MyMapReduce mp_object(MPI_COMM_WORLD, size);
 
-    int iter=0;
     while(diff>Convergence){
-        cout<<"iteration:"<<iter<<" diff:"<<diff<<endl;
+        if(my_rank==root) cout<<"\niteration:"<<iter<<" diff:"<<diff<<endl;
+        MyMapReduce mp_object(MPI_COMM_WORLD, size);
         for(int i(0);i<importances.size();i++)
             prev_vals.at(i)=importances[i];
+        MPI_Barrier(MPI_COMM_WORLD);
 
-        // do map collate reduce
-        // std::cout << "mapping" << '\n';
         mp_object.MAP(function_for_map);
-        // std::cout << "collating" << '\n';
-        mp_object.COLLATE();
-        // std::cout << "reducing" << '\n';
-        mp_object.REDUCE(function_for_reduce);
+        MPI_Barrier(MPI_COMM_WORLD);
 
-        // std::cout << "normalising" << '\n';
-        normalize();
-        // print(importances);
-        diff = calculateDifference(prev_vals);
+        mp_object.COLLATE();
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        mp_object.REDUCE(function_for_reduce);
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        if(my_rank==root){
+            normalize();
+            diff = calculateDifference(prev_vals);
+        }
+        MPI_Bcast(&diff,1,MPI_FLOAT,root,MPI_COMM_WORLD);
         iter++;
-        // break;
     }
     MPI_Finalize();
 
-    std::string outfile_name = file.substr(0,file.length()-4);
-    outfile_name.append("-pr-mpi.txt");
-    std::ofstream outputFile(outfile_name);
-    double sum = 0.0;
-    for(int i(0);i<importances.size();i++){
-        if(node_exists[i]){
-            outputFile << i <<" = "<<importances[i]<<std::endl;
-            sum+=importances[i];
+    if(my_rank==root){
+        std::string outfile_name = file.substr(0,file.length()-4);
+        outfile_name.append("-pr-mpi.txt");
+        std::ofstream outputFile(outfile_name);
+        double sum = 0.0;
+        std::cout << "writing" << '\n';
+        for(int i(0);i<importances.size();i++){
+            if(node_exists[i]){
+                outputFile << i <<" = "<<importances[i]<<std::endl;
+                sum+=importances[i];
+            }
         }
-    }
-    outputFile<<"sum = "<<sum<<std::endl;
+        outputFile<<"sum = "<<sum<<std::endl;
 
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double,std::milli> duration = (stop - start);
-    std::cout << duration.count()/1000.0<<" seconds taken for "<<iter<<" iterations." << '\n';
+        auto stop = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double,std::milli> duration = (stop - start);
+        std::cout << duration.count()/1000.0<<" seconds taken for "<<iter<<" iterations." << '\n';
+    }
 
 	return 0;
 
