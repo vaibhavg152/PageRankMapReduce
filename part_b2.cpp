@@ -101,10 +101,8 @@ public:
     }
 
     void MAP(void (*func)(keyvalue_t&,int)){
-        for(int i=0;i<num_procs; i++){
-            for(int j=i*size_per_process; j<std::min(size_per_process*(i+1),map_size); j++){
-                func(kv,j);
-            }
+        for(int j=my_rank*size_per_process; j<std::min(size_per_process*(my_rank+1),map_size); j++){
+            func(kv,j);
         }
     }
 
@@ -129,16 +127,14 @@ public:
     }
 
     void REDUCE(void (*func)(int&,std::vector<float>)){
-        for(int i=0;i<num_procs; i++){
-            for(int j=i*size_per_process; j<std::min((i+1)*size_per_process, map_size); j++){
-                auto it = keymultivalues.find(j);
-                if(it==keymultivalues.end()){
-                    if(node_exists[j])
-                        std::cout << "something is wrong" << '\n';
-                    else continue;
-                }
-                func(j,it->second);
+        for(int j=my_rank*size_per_process; j<std::min((my_rank+1)*size_per_process, map_size); j++){
+            auto it = keymultivalues.find(j);
+            if(it==keymultivalues.end()){
+                if(node_exists[j])
+                    std::cout << "something is wrong" << '\n';
+                else continue;
             }
+            func(j,it->second);
         }
     }
 
