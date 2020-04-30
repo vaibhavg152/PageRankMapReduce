@@ -1,5 +1,6 @@
 #include<iostream>
 #include <bits/stdc++.h>
+#include "mpi.h"
 
 using namespace std;
 typedef std::vector< std::pair <int, float> > keyvalue_t;
@@ -90,12 +91,18 @@ void function_for_reduce(int &key, std::vector<float> imp){
 
 class MyMapReduce{
 public:
-    MyMapReduce(){}
+    MyMapReduce(MPI_Comm comm, int size){
+        communicator = comm;
+        map_size = size;
+        MPI_Comm_rank(communicator, &my_rank);
+        MPI_Comm_size(communicator, &num_procs);
+        num_procs  = std::min(num_procs,map_size);
+        size_per_process = 1 + size/num_procs;
+    }
 
-    void MAP(void (*func)(keyvalue_t&,int), int size, int num){
-        int size_per_process = 1 + size/num;
-        for(int i=0;i<num; i++){
-            for(int j=i*size_per_process; j<std::min(size_per_process*(i+1),size); j++){
+    void MAP(void (*func)(keyvalue_t&,int)){
+        for(int i=0;i<num_procs; i++){
+            for(int j=i*size_per_process; j<std::min(size_per_process*(i+1),map_size); j++){
                 func(kv,j);
             }
         }
@@ -121,10 +128,9 @@ public:
         // print_keymultivalue();
     }
 
-    void REDUCE(void (*func)(int&,std::vector<float>), int size, int num){
-        int size_per_process = size/num;
-        for(int i=0;i<num; i++){
-            for(int j=i*size_per_process; j<std::min((i+1)*size_per_process, size); j++){
+    void REDUCE(void (*func)(int&,std::vector<float>)){
+        for(int i=0;i<num_procs; i++){
+            for(int j=i*size_per_process; j<std::min((i+1)*size_per_process, map_size); j++){
                 auto it = keymultivalues.find(j);
                 if(it==keymultivalues.end()){
                     if(node_exists[j])
@@ -156,9 +162,10 @@ public:
     }
 
 private:
-    // MPI_Comm communicator
+    MPI_Comm communicator;
     keyvalue_t kv;
     keymultivalue_t keymultivalues;
+    int map_size, num_procs, my_rank, size_per_process;
 };
 
 // void MAP(void (*func)(keyvalue_t&,int), int size, int num){
@@ -204,7 +211,7 @@ int main(int narg, char** argv){
     TotalImportance = 1.0;
     std::string line;
     std::string file = argv[1];
-    int numProc      = atoi(argv[2]);
+    // int numProc      = atoi(argv[2]);
 
     auto start = std::chrono::high_resolution_clock::now();
     std::ifstream infile(file);
@@ -253,8 +260,12 @@ int main(int narg, char** argv){
     std::vector<float> prev_vals(size,0.0);
     float diff = 1.0;
     DanglingImportance = ((float)dangling)/((float)size);
-    numProc  = std::min(numProc,size);
-    MyMapReduce mp_object;
+
+    MPI_Init(&narg, &argv);
+    int numProc = 0;
+    MPI_Comm_size(MPI_COMM_WORLD,&numProc);
+
+    MyMapReduce mp_object(MPI_COMM_WORLD, size);
 
     int iter=0;
     while(diff>Convergence){
@@ -264,11 +275,11 @@ int main(int narg, char** argv){
 
         // do map collate reduce
         // std::cout << "mapping" << '\n';
-        mp_object.MAP(function_for_map,size,numProc);
+        mp_object.MAP(function_for_map);
         // std::cout << "collating" << '\n';
         mp_object.COLLATE();
         // std::cout << "reducing" << '\n';
-        mp_object.REDUCE(function_for_reduce,size,numProc);
+        mp_object.REDUCE(function_for_reduce);
 
         // std::cout << "normalising" << '\n';
         normalize();
@@ -277,6 +288,7 @@ int main(int narg, char** argv){
         iter++;
         // break;
     }
+    MPI_Finalize();
 
     std::string outfile_name = file.substr(0,file.length()-4);
     outfile_name.append("-pr-mpi.txt");
