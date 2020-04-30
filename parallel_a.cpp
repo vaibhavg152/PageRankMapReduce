@@ -10,9 +10,12 @@
 #include <chrono>
 #include <algorithm>
 
+
+std::vector<bool> doesExist;
 std::vector<std::vector<int> > graph;
 std::vector<bool> isDangling;
 std::vector<float> importances;
+int totalExistingNodes;
 float TotalImportance;
 float DanglingImportance;
 float Alpha = 0.85;
@@ -36,6 +39,7 @@ void copyArray(std::vector<float> v){
 float calculateDifference(std::vector<float> v){
     float diff(0.0);
     for(int i(0);i<v.size();i++){
+        if(doesExist[i])
         diff += abs(v[i]-importances[i]);
     }
     return diff;
@@ -44,12 +48,15 @@ float calculateDifference(std::vector<float> v){
 void normalize(){
     float sum = 0.0;
     for(int i(0);i<importances.size();i++){
-        sum += importances[i];
+        if(doesExist[i])
+            sum += importances[i];
     }
     float dang = 0;
     for(int i(0);i<importances.size();i++){
-        importances.at(i) = importances[i]/sum;
-        if(isDangling[i]) dang+=importances.at(i);
+        if(doesExist[i]){
+            importances.at(i) = importances[i]/sum;
+            if(isDangling[i]) dang+=importances.at(i);
+        }
     }
     DanglingImportance = dang;
 }
@@ -111,8 +118,10 @@ struct map_task : public mapreduce::map_task<int, std::pair<int, int> >
                     // tImportance += passedImportance;
                 }
             }
-            float dImportance = Alpha*(DanglingImportance/((float)graph.size()))  +  (1-Alpha)/((float)graph.size());
-            runtime.emit_intermediate(loop,dImportance);
+            if(doesExist[loop]){
+                float dImportance = Alpha*(DanglingImportance/(float)totalExistingNodes)  +  (1-Alpha)/((float)totalExistingNodes);
+                runtime.emit_intermediate(loop,dImportance);
+            }
         }
     }
 };
@@ -153,7 +162,7 @@ int main(int argc, char *argv[]){
     std::string line;
 	std::string file = argv[1];
     int numProc      = atoi(argv[2]);
-
+    std::set<int> existingNodes;
     auto start = std::chrono::high_resolution_clock::now();
     std::ifstream infile(file);
     int maxx(0);
@@ -161,21 +170,27 @@ int main(int argc, char *argv[]){
 		while(getline(infile,line)){
 			std::vector<std::string> splittedString = split(line,' ');
 			int k = std::max(std::stoi(splittedString[1]) , std::stoi(splittedString[0]));
-
+            existingNodes.insert(std::stoi(splittedString[1]));
+            existingNodes.insert(std::stoi(splittedString[0]));
             if(k>maxx){
                 maxx = k;
             }
 		}
-
         infile.close();
 	}
     int size = maxx + 1;
     std::vector<int> v;
-    float initialImportance = 1/(float)size;
+    float initialImportance = 1/(float)existingNodes.size();
+    totalExistingNodes = existingNodes.size();
     for(int i(0);i<size;i++){
         graph.push_back(v);
         isDangling.push_back(true);
-        importances.push_back(initialImportance);
+        importances.push_back(0);
+        doesExist.push_back(false);
+    }
+    for(std::set<int>::iterator it=existingNodes.begin();it!=existingNodes.end();++it){
+        doesExist[*it] = true;
+        importances[*it] = initialImportance;
     }
     std::ifstream myfile(file);
 	if(myfile.is_open()){
@@ -211,8 +226,10 @@ int main(int argc, char *argv[]){
     std::ofstream outputFile(outfile_name);
     double sum = 0.0;
     for(int i(0);i<importances.size();i++){
-        outputFile << i <<" = "<<importances[i]<<std::endl;
-        sum+=importances[i];
+        if(doesExist[i]){
+            outputFile << i <<" = "<<importances[i]<<std::endl;
+            sum+=importances[i];
+        }
     //     std::cout<<i<<" = "<<importances[i]<<std::endl;
     }
     outputFile<<"sum = "<<sum<<std::endl;
