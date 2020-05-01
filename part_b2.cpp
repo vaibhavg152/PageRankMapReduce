@@ -109,6 +109,7 @@ public:
 
     void COLLATE(){
         // send all keyvalues
+        // print_keyvalue();
         if(my_rank!=root){
             int kv_size = kv.size();
             MPI_Send(&kv_size, 1, MPI_INT, root, 0, MPI_COMM_WORLD);
@@ -334,8 +335,10 @@ int main(int narg, char** argv){
         if(my_rank==root){
             normalize();
             diff = calculateDifference(prev_vals);
+            // print(importances);
         }
         MPI_Bcast(&diff,1,MPI_FLOAT,root,MPI_COMM_WORLD);
+        MPI_Bcast(&DanglingImportance,1,MPI_FLOAT,root,MPI_COMM_WORLD);
         iter++;
     }
     MPI_Finalize();
