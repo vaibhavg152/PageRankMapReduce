@@ -305,7 +305,7 @@ int main(int narg, char** argv){
 
 
     while(diff>Convergence){
-        if(my_rank==root) cout<<"\niteration:"<<iter<<" diff:"<<diff<<endl;
+        // if(my_rank==root) cout<<"\niteration:"<<iter<<" diff:"<<diff<<endl;
         MyMapReduce mp_object(MPI_COMM_WORLD, size);
         for(int i(0);i<importances.size();i++)
             prev_vals.at(i)=importances[i];
@@ -339,7 +339,7 @@ int main(int narg, char** argv){
         outfile_name.append("-pr-mpi.txt");
         std::ofstream outputFile(outfile_name);
         double sum = 0.0;
-        std::cout << "writing" << '\n';
+        // std::cout << "writing" << '\n';
         for(int i(0);i<importances.size();i++){
             if(node_exists[i]){
                 outputFile << i <<" = "<<importances[i]<<std::endl;
