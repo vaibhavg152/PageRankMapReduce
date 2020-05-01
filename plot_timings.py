@@ -11,6 +11,6 @@ for part, vals in timings.items():
 plt.legend(list(timings.keys()))
 plt.xlabel('filenames')
 plt.ylabel('time taken (in seconds)')
-plt.savefig('graph-all.svg')
+plt.savefig('graph_all.svg')
 plt.title('number of processes = 4')
 plt.show()
