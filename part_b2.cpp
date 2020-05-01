@@ -367,7 +367,7 @@ int main(int narg, char** argv){
         iter++;
     }
 
-    if(my_rank!=root){
+    if(my_rank==root){
         std::string outfile_name = file.substr(0,file.length()-4);
         outfile_name.append("-pr-mpi.txt");
         std::ofstream outputFile(outfile_name);
