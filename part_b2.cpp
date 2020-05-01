@@ -132,6 +132,7 @@ public:
             for(int i=0; i<kmv_size; i++){
                 int mv_size,key;
                 MPI_Recv(&mv_size,1,MPI_INT,root,0,communicator,MPI_STATUS_IGNORE);
+                if(mv_size<0) continue;
                 MPI_Recv(&key,1,MPI_INT,root,0,communicator,MPI_STATUS_IGNORE);
                 float mv[mv_size];
                 MPI_Recv(mv,mv_size,MPI_FLOAT,root,0,communicator,MPI_STATUS_IGNORE);
@@ -184,7 +185,7 @@ public:
                 int start = receiver*kmv_size;
                 int end = min(start + kmv_size, map_size);
                 kmv_size = end-start;
-                if(kmv_size<=0) continue;
+                // if(kmv_size<=0) continue;
                 if(receiver!=root) MPI_Send(&kmv_size,1,MPI_INT,receiver,0,communicator);
                 for(int key=start; key<end; key++){
                     auto it = all_keymultivalues.find(key);
@@ -199,6 +200,12 @@ public:
                             MPI_Send(&key,1,MPI_INT,receiver,0,communicator);
                             float* mv = &multivalues[0];
                             MPI_Send(mv,mv_size,MPI_FLOAT,receiver,0,communicator);
+                        }
+                    }
+                    else{
+                        if(receiver!=root){
+                            int not_found = -1;
+                            MPI_Send(&not_found,1,MPI_INT,receiver,0,communicator);
                         }
                     }
                 }
@@ -348,18 +355,22 @@ int main(int narg, char** argv){
             prev_vals.at(i)=importances[i];
         MPI_Barrier(MPI_COMM_WORLD);
 
+        // if(my_rank==root) cout<<"mapping"<<iter<<endl;
         mp_object.MAP(function_for_map);
         MPI_Barrier(MPI_COMM_WORLD);
 
+        // if(my_rank==root) cout<<"collating"<<iter<<endl;
         mp_object.COLLATE();
         MPI_Barrier(MPI_COMM_WORLD);
 
+        // if(my_rank==root) cout<<"reducing"<<iter<<endl;
         mp_object.REDUCE(function_for_reduce);
         MPI_Barrier(MPI_COMM_WORLD);
 
-        normalize();
+        // if(my_rank==root) cout<<"normalizing"<<iter<<endl;
         if(my_rank==root){
             diff = calculateDifference(prev_vals);
+            normalize();
             // print(importances);
         }
         MPI_Bcast(&diff,1,MPI_FLOAT,root,MPI_COMM_WORLD);
