@@ -82,11 +82,15 @@ void function_for_map(keyvalue_t &key_values, int index){
     }
 }
 
-void function_for_reduce(int &key, std::vector<float> imp){
-    float sum(0.0);
-    for(int it1 = 0; it1<imp.size(); it1++)
-        sum += imp[it1];
-    importances.at(key) = sum;
+void function_for_reduce(keymultivalue_t kmv){
+    for(auto it=kmv.begin(); it!=kmv.end(); ++it){
+        int key = it->first;
+        std::vector<float> imp = it->second;
+        float sum(0.0);
+        for(int i = 0; i<imp.size(); i++)
+            sum += imp[i];
+        importances[key] = sum;
+    }
 }
 
 class MyMapReduce{
@@ -98,7 +102,7 @@ public:
         MPI_Comm_rank(communicator, &my_rank);
         MPI_Comm_size(communicator, &num_procs);
         num_procs  = std::min(num_procs,map_size);
-        size_per_process = 1 + size/num_procs;
+        size_per_process = ceil(map_size/(double)num_procs);
     }
 
     void MAP(void (*func)(keyvalue_t&,int)){
@@ -108,42 +112,53 @@ public:
     }
 
     void COLLATE(){
-        // send all keyvalues
         // print_keyvalue();
         if(my_rank!=root){
+            // send all keyvalues to root
             int kv_size = kv.size();
-            MPI_Send(&kv_size, 1, MPI_INT, root, 0, MPI_COMM_WORLD);
+            MPI_Send(&kv_size, 1, MPI_INT, root, 0, communicator);
             int keys[kv_size];
             float values[kv_size];
             for(int i=0; i<kv.size(); i++){
                 keys[i] = kv[i].first;
                 values[i] = kv[i].second;
             }
-            MPI_Send(&keys, kv_size, MPI_INT, root, 0, MPI_COMM_WORLD);
-            MPI_Send(&values, kv_size, MPI_FLOAT, root, 0, MPI_COMM_WORLD);
+            MPI_Send(&keys, kv_size, MPI_INT, root, 0, communicator);
+            MPI_Send(&values, kv_size, MPI_FLOAT, root, 0, communicator);
+
+            //receive keymultivalues from root
+            int kmv_size;
+            MPI_Recv(&kmv_size,1,MPI_INT,root,0,communicator,MPI_STATUS_IGNORE);
+            for(int i=0; i<kmv_size; i++){
+                int mv_size,key;
+                MPI_Recv(&mv_size,1,MPI_INT,root,0,communicator,MPI_STATUS_IGNORE);
+                MPI_Recv(&key,1,MPI_INT,root,0,communicator,MPI_STATUS_IGNORE);
+                float mv[mv_size];
+                MPI_Recv(mv,mv_size,MPI_FLOAT,root,0,communicator,MPI_STATUS_IGNORE);
+                keymultivalues.insert({key,std::vector<float>(mv, mv + mv_size)});
+            }
         }
         else{
             // receiving key values from all other processors
+            keymultivalue_t all_keymultivalues;
             for(int sender=1; sender<num_procs; sender++){
                 int kv_size;
-                // std::cout << "receiving kvsize from sender:"<<sender << '\n';
                 MPI_Recv(&kv_size, 1, MPI_INT, sender, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                // std::cout << "received kvsize:"<<kv_size<<" from sender:"<<sender << '\n';
                 int keys[kv_size];
                 float values[kv_size];
                 MPI_Recv(keys, kv_size, MPI_INT, sender, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(values, kv_size, MPI_FLOAT, sender, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 // collating the key values received by the processor
                 for(int i=0; i<kv_size; i++){
-                    auto it = keymultivalues.find(keys[i]);
-                    if(it==keymultivalues.end()){
+                    auto it = all_keymultivalues.find(keys[i]);
+                    if(it==all_keymultivalues.end()){
                         std::vector<float> v = {values[i]};
-                        keymultivalues.insert({keys[i],v});
+                        all_keymultivalues.insert({keys[i],v});
                     }
                     else{
                         std::vector<float> v = it->second;
                         v.push_back(values[i]);
-                        keymultivalues[keys[i]] = v;
+                        all_keymultivalues[keys[i]] = v;
                     }
                 }
             }
@@ -151,42 +166,52 @@ public:
             for(int i=0; i<kv.size(); i++){
                 std::pair <int, float> cur_pair = kv[i];
                 int key = kv[i].first;
-                std::map<int,std::vector<float> >::const_iterator it = keymultivalues.find(key);
-                if(it==keymultivalues.end()){
+                auto it = all_keymultivalues.find(key);
+                if(it==all_keymultivalues.end()){
                     std::vector<float> v = {cur_pair.second};
-                    keymultivalues.insert({key,v});
+                    all_keymultivalues.insert({key,v});
                 }
                 else{
                     std::vector<float> v = it->second;
                     v.push_back(cur_pair.second);
-                    keymultivalues[key] = v;
+                    all_keymultivalues[key] = v;
+                }
+            }
+            // sending keymultivalues
+
+            int kmv_size = ceil(map_size/(double)num_procs);
+            for(int receiver=0; receiver<num_procs; receiver++){
+                int start = receiver*kmv_size;
+                int end = min(start + kmv_size, map_size);
+                kmv_size = end-start;
+                if(kmv_size<=0) continue;
+                if(receiver!=root) MPI_Send(&kmv_size,1,MPI_INT,receiver,0,communicator);
+                for(int key=start; key<end; key++){
+                    auto it = all_keymultivalues.find(key);
+                    if(it!=all_keymultivalues.end()){
+                        if(receiver==root){
+                            keymultivalues.insert({it->first,it->second});
+                        }
+                        else{
+                            std::vector<float> multivalues = it->second;
+                            int mv_size = multivalues.size();
+                            MPI_Send(&mv_size,1,MPI_INT,receiver,0,communicator);
+                            MPI_Send(&key,1,MPI_INT,receiver,0,communicator);
+                            float* mv = &multivalues[0];
+                            MPI_Send(mv,mv_size,MPI_FLOAT,receiver,0,communicator);
+                        }
+                    }
                 }
             }
         }
         // print_keymultivalue();
     }
 
-    void REDUCE(void (*func)(int&,std::vector<float>)){
-        float imp_a[importances.size()];
-        if(my_rank==root){
-            for(int j=0; j<map_size; j++){
-            // for(int j=my_rank*size_per_process; j<std::min((my_rank+1)*size_per_process, map_size); j++){
-                auto it = keymultivalues.find(j);
-                if(it==keymultivalues.end()){
-                    if(node_exists[j])
-                        std::cout << "something is wrong" << '\n';
-                    else continue;
-                }
-                func(j,it->second);
-            }
-            for(int i=0; i<importances.size();i++){
-                imp_a[i] = importances[i];
-            }
+    void REDUCE(void (*func)(keymultivalue_t)){
+        func(keymultivalues);
+        for(int i=0; i<importances.size();i++){
+            MPI_Bcast(&importances[i],1,MPI_FLOAT,i/size_per_process,communicator);
         }
-        MPI_Bcast(&imp_a,importances.size(),MPI_FLOAT,root,MPI_COMM_WORLD);
-        for(int i=0; i<importances.size(); i++)
-            importances[i] = imp_a[i];
-
     }
 
     void print_keymultivalue(){
@@ -332,8 +357,8 @@ int main(int narg, char** argv){
         mp_object.REDUCE(function_for_reduce);
         MPI_Barrier(MPI_COMM_WORLD);
 
+        normalize();
         if(my_rank==root){
-            normalize();
             diff = calculateDifference(prev_vals);
             // print(importances);
         }
@@ -341,9 +366,8 @@ int main(int narg, char** argv){
         MPI_Bcast(&DanglingImportance,1,MPI_FLOAT,root,MPI_COMM_WORLD);
         iter++;
     }
-    MPI_Finalize();
 
-    if(my_rank==root){
+    if(my_rank!=root){
         std::string outfile_name = file.substr(0,file.length()-4);
         outfile_name.append("-pr-mpi.txt");
         std::ofstream outputFile(outfile_name);
@@ -361,6 +385,7 @@ int main(int narg, char** argv){
         std::chrono::duration<double,std::milli> duration = (stop - start);
         std::cout << duration.count()/1000.0<<" seconds taken for "<<iter<<" iterations." << '\n';
     }
+    MPI_Finalize();
 
 	return 0;
 
