@@ -26,13 +26,13 @@ for filename in filenames:
 
 
 print('running part a')
-compile_command = 'g++ mr-pr-cpp.cpp /usr/lib/x86_64-linux-gnu/libboost_system.a /usr/lib/x86_64-linux-gnu/libboost_iostreams.a /usr/lib/x86_64-linux-gnu/libboost_filesystem.a -pthread -o mr-pr-cpp.o -I src'
+compile_command = 'g++ mr-pr-cpp.cpp /usr/lib/x86_64-linux-gnu/libboost_system.a /usr/lib/x86_64-linux-gnu/libboost_iostreams.a /usr/lib/x86_64-linux-gnu/libboost_filesystem.a -pthread -o mr-pr-cpp.o -I a_src'
 
 os.system(compile_command)
 for filename in filenames:
 	filename = 'test/' + filename.strip()
 	print(filename)
-	run_command = './mr-pr-cpp.o {}.txt {} -o {}-pr-cpp.txt'.format(filename,num_processors,filename)
+	run_command = 'mpirun -np {} ./mr-pr-mpi.o {}.txt'.format(num_processors,filename)
 	stream = os.popen(run_command)
 	output = stream.read().split()
 	timings['pr-cpp'][filename.strip()] = (float(output[0]))
