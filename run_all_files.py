@@ -13,7 +13,7 @@ filenames = open('test/all-tests.txt').readlines()[1:-1]
 
 
 print('running part b')
-compile_command = 'mpic++ part_b.cpp -o mr-pr-mpi.o'
+compile_command = 'mpic++ mr-pr-mpi.cpp -o mr-pr-mpi.o'
 
 os.system(compile_command)
 for filename in filenames:
@@ -26,7 +26,7 @@ for filename in filenames:
 
 
 print('running part a')
-compile_command = 'g++ parallel_a.cpp /usr/lib/x86_64-linux-gnu/libboost_system.a /usr/lib/x86_64-linux-gnu/libboost_iostreams.a /usr/lib/x86_64-linux-gnu/libboost_filesystem.a -pthread -o mr-pr-cpp.o'
+compile_command = 'g++ mr-pr-cpp.cpp /usr/lib/x86_64-linux-gnu/libboost_system.a /usr/lib/x86_64-linux-gnu/libboost_iostreams.a /usr/lib/x86_64-linux-gnu/libboost_filesystem.a -pthread -o mr-pr-cpp.o'
 
 os.system(compile_command)
 for filename in filenames:
