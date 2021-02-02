@@ -1,8 +1,8 @@
-For compiling part a:
+For compiling part a (with mapreduce c++ library):
     make a
-For compiling part b:
+For compiling part b (with own implementation of relevant mapreduce functions):
     make b
-For compiling part c:
+For compiling part c (with mapreduce MPI library):
     make c
 
 For running part a:
